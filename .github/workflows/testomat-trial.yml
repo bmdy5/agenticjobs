@@ -23,20 +23,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [ai-generated]
+        scenario: [browser-login]
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 11.18.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run build
-      - name: Run AI-generated regression against real application code
-        run: node --test --test-reporter=junit .github/testomat/ai-generated-regression.test.mjs > trial-results.xml
+          cache: npm
+          cache-dependency-path: .github/testomat/login-demo/package-lock.json
+      - name: Install browser tests
+        working-directory: .github/testomat/login-demo
+        run: npm ci
+      - name: Install Chromium
+        working-directory: .github/testomat/login-demo
+        run: npx playwright install --with-deps chromium
+      - name: Start real login application and run Chromium tests
+        working-directory: .github/testomat/login-demo
+        run: npm test
+      - name: Collect browser JUnit report
+        if: always() && hashFiles('.github/testomat/login-demo/artifacts/login-junit.xml') != ''
+        run: cp .github/testomat/login-demo/artifacts/login-junit.xml trial-results.xml
       - name: Upload report to personal Testomat project
         if: always() && hashFiles('trial-results.xml') != ''
         env:
@@ -44,7 +50,6 @@ jobs:
           TESTOMATIO_TITLE: agenticjobs trial - ${{ matrix.scenario }} - ${{ github.run_id }}
           TESTOMATIO_CREATE: '1'
         run: |
-          node .github/testomat/normalize-junit.cjs trial-results.xml
           npx --yes @testomatio/reporter@2.20.0 xml trial-results.xml
       - name: Sync failing and recovered test cases to personal Feishu tasks
         if: always() && hashFiles('trial-results.xml') != ''
@@ -62,3 +67,4 @@ jobs:
           path: |
             trial-results.xml
             feishu-sync-result.json
+            .github/testomat/login-demo/artifacts/

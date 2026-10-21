@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>登录 · 个人自动化测试</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f2f5f9; color: #172334; font-family: system-ui, sans-serif; }
+    main { width: min(440px, calc(100% - 32px)); padding: 36px; background: white; border: 1px solid #dbe2eb; border-radius: 18px; box-shadow: 0 14px 44px #1723340a; }
+    .badge { color: #17664c; background: #e9f6ef; padding: 5px 10px; border-radius: 6px; font-size: 13px; }
+    h1 { font-size: 28px; margin: 24px 0 8px; }
+    .intro, small { color: #607086; }
+    form { display: grid; gap: 10px; margin-top: 28px; }
+    label { font-weight: 600; font-size: 14px; margin-top: 8px; }
+    input { width: 100%; padding: 12px; font: inherit; border: 1px solid #bdc9d8; border-radius: 7px; }
+    input:focus { outline: 3px solid #dfebff; border-color: #386ad9; }
+    button { border: 0; border-radius: 7px; padding: 13px; font: inherit; font-weight: 600; color: white; background: #285bc8; cursor: pointer; margin-top: 12px; }
+    [role="alert"] { color: #b42318; font-size: 14px; min-height: 20px; margin: 2px 0; }
+    aside { margin-top: 22px; padding-top: 18px; border-top: 1px solid #e5eaf1; color: #607086; font-size: 13px; line-height: 1.8; }
+    code { color: #172334; }
+  </style>
+</head>
+<body>
+  <main>
+    <span class="badge">个人试用 · 演示环境</span>
+    <h1>欢迎登录</h1>
+    <p class="intro">用于验证浏览器输入、点击和登录跳转。</p>
+    <form novalidate>
+      <label for="username">账号</label>
+      <input id="username" name="username" maxlength="8" autocomplete="username" aria-describedby="username-hint" placeholder="请输入账号">
+      <small id="username-hint">账号最多 20 个字符</small>
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" placeholder="请输入密码">
+      <p role="alert" aria-live="polite"></p>
+      <button type="submit">登录</button>
+    </form>
+    <aside>演示账号：<code>demo</code><br>演示密码：<code>DemoPass123!</code><br>仅为测试数据，不连接公司系统。</aside>
+  </main>
+  <script>
+    /** 提交演示凭据，显示接口错误或进入工作台。 */
+    document.querySelector('form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const username = document.querySelector('#username').value.trim();
+      const password = document.querySelector('#password').value;
+      const message = document.querySelector('[role="alert"]');
+      if (!username || !password) {
+        message.textContent = '请输入账号和密码';
+        return;
+      }
+      const response = await fetch('/api/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        message.textContent = result.error;
+        return;
+      }
+      window.location.assign(result.redirect);
+    });
+  </script>
+</body>
+</html>
