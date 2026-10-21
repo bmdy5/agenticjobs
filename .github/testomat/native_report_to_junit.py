@@ -23,10 +23,20 @@ def convert(source, destination):
             raise ValueError("Official test has no status: " + name)
         status = match.group(1).strip()
         case = ET.SubElement(suite, "testcase", name=name, classname="official-explorbot")
+        if report_link:
+            case.set("testomat_report_url", report_link.group(0))
         if status in {"failed", "broken"}:
             failed += 1
-            failure = ET.SubElement(case, "failure", message="Official Explorbot: " + status)
-            failure.text = ((report_link.group(0) + "\n") if report_link else "") + section.split("<details>")[0]
+            failure = ET.SubElement(case, "failure", message="官方 AI 判定此用例未达到预期")
+            message = re.search(r"\*\*Message\*\*\s+>\s*([^\n]+)", section)
+            if message:
+                summary = message.group(1)
+            else:
+                steps = section.split("**Steps**", 1)[-1].split("**Stack Trace**", 1)[0]
+                symptoms = [line[2:] for line in steps.splitlines()
+                            if line.startswith("- ") and re.search(r"only|truncat|not achieved|not accept", line, re.I)]
+                summary = "\n".join(symptoms[:2]) or "请查看官方测试报告中的失败分析。"
+            failure.text = re.sub(r" _\([^\n]*\)_", "", summary)[:400]
         elif status in {"skipped", "todo"}:
             skipped += 1
             ET.SubElement(case, "skipped", message="Official Explorbot: " + status)
