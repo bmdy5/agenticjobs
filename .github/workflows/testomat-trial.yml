@@ -52,7 +52,9 @@ jobs:
           TESTOMATIO: ${{ secrets.TESTOMATIO_PERSONAL_TRIAL }}
           TESTOMATIO_TITLE: agenticjobs trial - ${{ matrix.scenario }} - ${{ github.run_id }}
           TESTOMATIO_CREATE: '1'
-        run: npx --yes @testomatio/reporter@2.20.0 xml trial-results.xml
+        run: |
+          node .github/testomat/normalize-junit.cjs trial-results.xml
+          npx --yes @testomatio/reporter@2.20.0 xml trial-results.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
