@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scenario: [baseline, injected-failures]
+        scenario: [ai-generated]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -30,22 +30,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
-      - name: Run existing regression or explicit failure fixtures
-        env:
-          SCENARIO: ${{ matrix.scenario }}
-        shell: bash
-        run: |
-          set +e
-          if [ "$SCENARIO" = baseline ]; then
-            node --test --test-reporter=junit test/safe-redirect.test.ts > trial-results.xml
-            result=$?
-            cat trial-results.xml
-            exit "$result"
-          fi
-          node --test --test-reporter=junit .github/testomat/injected-failures.test.cjs > trial-results.xml
-          result=$?
-          cat trial-results.xml
-          test "$result" -ne 0
+      - name: Run AI-generated regression against real application code
+        run: node --test --test-reporter=junit .github/testomat/ai-generated-regression.test.mjs > trial-results.xml
       - name: Upload report to personal Testomat project
         if: always() && hashFiles('trial-results.xml') != ''
         env:
