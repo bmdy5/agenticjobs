@@ -1,0 +1,95 @@
+name: Testomat AI repair PR verification
+
+on:
+  push:
+    branches: [codex/testomat-ai-fix-20261021]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  verify-ai-fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TRIAL_MODEL_API_KEY: ${{ secrets.TESTOMAT_TRIAL_MODEL_API_KEY }}
+      TESTOMATIO: ${{ secrets.TESTOMATIO_PERSONAL_TRIAL }}
+      GH_TOKEN: ${{ github.token }}
+      FEISHU_TESTOMAT_APP_ID: ${{ secrets.FEISHU_TESTOMAT_APP_ID }}
+      FEISHU_TESTOMAT_APP_SECRET: ${{ secrets.FEISHU_TESTOMAT_APP_SECRET }}
+      FEISHU_TESTOMAT_LIST_GUID: 1254b46c-5edb-4dba-b770-ffea8fab33be
+      FEISHU_TESTOMAT_USER_OPEN_ID: ou_72ba2d7d186f85e39786aaa95823d5a3
+      GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/testomat/native-agent/package-lock.json
+      - name: Install official browser agent
+        working-directory: .github/testomat/native-agent
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Find the AI-created PR and Issue
+        run: |
+          mkdir -p native-evidence
+          for attempt in $(seq 1 30); do
+            gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --json number,url,body > native-evidence/pr.json
+            if node -e 'process.exit(JSON.parse(require("fs").readFileSync("native-evidence/pr.json")).length ? 0 : 1)'; then break; fi
+            sleep 2
+          done
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const pr=JSON.parse(fs.readFileSync('native-evidence/pr.json'))[0];
+          if(!pr) throw new Error('AI PR was not created');
+          const issue=pr.body.match(/https:\/\/github\.com\/bmdy5\/agenticjobs\/issues\/\d+/)?.[0];
+          if(!issue) throw new Error('PR does not link the input Issue');
+          fs.appendFileSync(process.env.GITHUB_ENV,`GITHUB_ISSUE_URL=${issue}\nTRIAL_PR_URL=${pr.url}\n`);
+          JS
+      - name: Start the code committed by the AI
+        run: |
+          node .github/testomat/login-demo/server.mjs > /tmp/ai-repair-login.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4187/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Official Agent retests the PR code
+        working-directory: .github/testomat/native-agent
+        run: |
+          export TESTOMATIO_TITLE="AI-authored repair PR - GitHub ${GITHUB_RUN_ID}"
+          timeout --signal=INT --kill-after=15 240 node node_modules/explorbot/dist/bin/explorbot-cli.js test plans/login-boundary.md 1 --config explorbot.config.mjs --headless > ../../../native-evidence/official-retest.log 2>&1
+          report=$(ls -t output/reports/session-*-tests.md | head -n 1)
+          cp "$report" ../../../native-evidence/official-retest.md
+      - name: Check actual results and complete Feishu task
+        run: |
+          python3 .github/testomat/native_report_to_junit.py native-evidence/official-retest.md native-evidence/retest.xml
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const xml=fs.readFileSync('native-evidence/retest.xml','utf8');
+          if(!/tests="1"/.test(xml)||!/failures="0"/.test(xml)||!/skipped="0"/.test(xml)) throw new Error('Official AI did not pass the fix');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,`## AI 根据截图 Issue 修复并提 PR\n\nPR：${process.env.TRIAL_PR_URL}\n\nIssue：${process.env.GITHUB_ISSUE_URL}\n\n复测的是 PR 提交的代码，没有执行预置恢复或替换修复。\n\n`);
+          JS
+          python3 .github/testomat/sync_feishu.py native-evidence/retest.xml
+          cp feishu-sync-result.json native-evidence/feishu-retest.json
+          node --input-type=module - <<'JS'
+          import fs from 'node:fs';
+          const tasks=JSON.parse(fs.readFileSync('native-evidence/feishu-retest.json'));
+          if(!tasks.some(t=>t.action==='completed'&&t.status==='done')) throw new Error('No existing Feishu task was completed');
+          JS
+          printf '官方 Explorbot 已复测本 PR 代码并通过，飞书任务已自动完成。\n\n执行记录：%s\n\n仅为个人试用，保持未合并。\n' "$GITHUB_RUN_URL" > native-evidence/pr-verification.md
+          gh pr comment "$TRIAL_PR_URL" --body-file native-evidence/pr-verification.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-authored-fix-and-retest
+          include-hidden-files: true
+          path: |
+            native-evidence/
+            .github/testomat/native-agent/output/reports/
+            .github/testomat/native-agent/output/tests/
