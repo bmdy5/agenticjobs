@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: testomat-official-ai-feishu
@@ -50,6 +51,9 @@ jobs:
           exit 1
       - name: Official AI detects defect, then retests fix and syncs Feishu
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AI_GATEWAY_API_KEY: ${{ secrets.TESTOMAT_TRIAL_MODEL_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p native-evidence
@@ -70,6 +74,12 @@ jobs:
             cp "$report" "../../../native-evidence/${phase}-official.md"
             popd
             python3 .github/testomat/native_report_to_junit.py "native-evidence/${phase}-official.md" "native-evidence/${phase}.xml"
+            if [ "$phase" = defect ]; then
+              bash .github/testomat/native-agent/triage.sh
+              if [ -f native-evidence/triage-verified.json ]; then
+                export GITHUB_ISSUE_URL=$(node -p "JSON.parse(require('fs').readFileSync('native-evidence/triage-verified.json','utf8')).issue.url")
+              fi
+            fi
             python3 .github/testomat/sync_feishu.py "native-evidence/${phase}.xml"
             cp feishu-sync-result.json "native-evidence/${phase}-feishu.json"
           done

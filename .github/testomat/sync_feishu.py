@@ -60,8 +60,10 @@ def main():
         title = PREFIX + name
         task = by_title.get(title)
         if failure is not None:
+            issue_line = f"Issue：{os.environ['GITHUB_ISSUE_URL']}\n" if os.environ.get("GITHUB_ISSUE_URL") else ""
             description = ("个人仓库自动回归，请勿当作公司缺陷。\n"
                            f"用例：{name}\nGitHub：{run_url}\n"
+                           f"{issue_line}"
                            f"Testomat：{case.get('testomat_report_url', 'https://app.testomat.io/projects/agenticjobs-personal-trial/runs')}\n"
                            f"失败：{failure.get('message', '')}\n{failure.text or ''}")
             description = description[:3000].encode("utf-8")[:10000].decode("utf-8", errors="ignore")
