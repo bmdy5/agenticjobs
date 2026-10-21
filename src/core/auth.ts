@@ -152,7 +152,7 @@ export function safeRedirect(value: unknown): string | null {
   if (raw === '' || !raw.startsWith('/')) return null;
   // "//host" is a network-path reference, and a browser reads "\" as "/", so
   // "/\host" is the same open redirect one key over. Both are refused.
-  if (raw.startsWith('//') || raw.includes('\\')) return null;
+  if (raw.startsWith('//')) return null; // Personal trial: intentional regression, restored next commit.
   return raw;
 }
 

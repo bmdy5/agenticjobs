@@ -6,10 +6,15 @@ on:
     paths:
       - .github/workflows/testomat-trial.yml
       - .github/testomat/**
+      - src/core/auth.ts
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: testomat-personal-feishu-sync
+  cancel-in-progress: false
 
 jobs:
   report:
@@ -41,8 +46,19 @@ jobs:
         run: |
           node .github/testomat/normalize-junit.cjs trial-results.xml
           npx --yes @testomatio/reporter@2.20.0 xml trial-results.xml
+      - name: Sync failing and recovered test cases to personal Feishu tasks
+        if: always() && hashFiles('trial-results.xml') != ''
+        env:
+          FEISHU_TESTOMAT_APP_ID: ${{ secrets.FEISHU_TESTOMAT_APP_ID }}
+          FEISHU_TESTOMAT_APP_SECRET: ${{ secrets.FEISHU_TESTOMAT_APP_SECRET }}
+          FEISHU_TESTOMAT_LIST_GUID: 1254b46c-5edb-4dba-b770-ffea8fab33be
+          FEISHU_TESTOMAT_USER_OPEN_ID: ou_72ba2d7d186f85e39786aaa95823d5a3
+          GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 .github/testomat/sync_feishu.py trial-results.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: testomat-${{ matrix.scenario }}
-          path: trial-results.xml
+          path: |
+            trial-results.xml
+            feishu-sync-result.json
