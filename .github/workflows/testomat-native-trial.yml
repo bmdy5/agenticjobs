@@ -1,0 +1,91 @@
+name: Testomat official AI trial
+
+on:
+  push:
+    branches: [codex/testomat-trial-20261021]
+    paths:
+      - .github/workflows/testomat-native-trial.yml
+      - .github/testomat/native-agent/**
+      - .github/testomat/native_report_to_junit.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: testomat-official-ai-feishu
+  cancel-in-progress: false
+
+jobs:
+  native-agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TRIAL_MODEL_API_KEY: ${{ secrets.TESTOMAT_TRIAL_MODEL_API_KEY }}
+      TESTOMATIO: ${{ secrets.TESTOMATIO_PERSONAL_TRIAL }}
+      FEISHU_TESTOMAT_APP_ID: ${{ secrets.FEISHU_TESTOMAT_APP_ID }}
+      FEISHU_TESTOMAT_APP_SECRET: ${{ secrets.FEISHU_TESTOMAT_APP_SECRET }}
+      FEISHU_TESTOMAT_LIST_GUID: 1254b46c-5edb-4dba-b770-ffea8fab33be
+      FEISHU_TESTOMAT_USER_OPEN_ID: ou_72ba2d7d186f85e39786aaa95823d5a3
+      GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/testomat/native-agent/package-lock.json
+      - name: Install official Explorbot and Chromium
+        working-directory: .github/testomat/native-agent
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+      - name: Start personal login demo
+        run: |
+          node .github/testomat/login-demo/server.mjs > /tmp/login-demo.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:4187/ > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Official AI detects defect, then retests fix and syncs Feishu
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p native-evidence
+          for phase in defect fixed; do
+            if [ "$phase" = defect ]; then
+              python3 - <<'PY'
+          from pathlib import Path
+          p = Path('.github/testomat/login-demo/index.html')
+          p.write_text(p.read_text().replace('maxlength="20"', 'maxlength="8"'))
+          PY
+            else
+              git restore -- .github/testomat/login-demo/index.html
+            fi
+            pushd .github/testomat/native-agent
+            export TESTOMATIO_TITLE="Official AI ${phase} - GitHub ${GITHUB_RUN_ID}"
+            timeout --signal=INT 240 node node_modules/explorbot/dist/bin/explorbot-cli.js test plans/login-boundary.md 1 --config explorbot.config.mjs --headless > "../../../native-evidence/${phase}.log" 2>&1
+            report=$(ls -t output/reports/session-*-tests.md | head -n 1)
+            cp "$report" "../../../native-evidence/${phase}-official.md"
+            popd
+            python3 .github/testomat/native_report_to_junit.py "native-evidence/${phase}-official.md" "native-evidence/${phase}.xml"
+            python3 .github/testomat/sync_feishu.py "native-evidence/${phase}.xml"
+            cp feishu-sync-result.json "native-evidence/${phase}-feishu.json"
+          done
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          failed = ET.parse('native-evidence/defect.xml').getroot()
+          fixed = ET.parse('native-evidence/fixed.xml').getroot()
+          assert failed.get('failures') == '1', 'Official AI did not detect the injected defect'
+          assert fixed.get('failures') == '0' and fixed.get('skipped') == '0', 'Official AI did not pass the repaired page'
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: official-ai-and-feishu-evidence
+          path: |
+            native-evidence/
+            .github/testomat/native-agent/output/reports/
+            .github/testomat/native-agent/output/tests/
+            .github/testomat/native-agent/output/screencasts/

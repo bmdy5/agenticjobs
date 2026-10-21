@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.99",
+    "explorbot": "^0.5.8"
+  }
+}
