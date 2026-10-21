@@ -108,4 +108,3 @@ http://127.0.0.1:4187/
 
 ## Expected
 * Only the first 20 characters are retained in the textbox, and the 21st character is truncated
-

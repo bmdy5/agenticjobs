@@ -12,6 +12,7 @@ def convert(source, destination):
     sections = re.split(r"(?m)^#### ", content)[1:]
     if not sections:
         raise ValueError("Official report contains no test cases")
+    report_link = re.search(r"https://app\.testomat\.io/[^>\s|]+", content)
     suite = ET.Element("testsuite", name="Official Explorbot", tests=str(len(sections)))
     failed = 0
     skipped = 0
@@ -25,7 +26,7 @@ def convert(source, destination):
         if status in {"failed", "broken"}:
             failed += 1
             failure = ET.SubElement(case, "failure", message="Official Explorbot: " + status)
-            failure.text = section.split("<details>")[0]
+            failure.text = ((report_link.group(0) + "\n") if report_link else "") + section.split("<details>")[0]
         elif status in {"skipped", "todo"}:
             skipped += 1
             ET.SubElement(case, "skipped", message="Official Explorbot: " + status)

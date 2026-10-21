@@ -63,7 +63,8 @@ def main():
             description = ("个人仓库自动回归，请勿当作公司缺陷。\n"
                            f"用例：{name}\nGitHub：{run_url}\n"
                            "Testomat：https://app.testomat.io/projects/agenticjobs-personal-trial/runs\n"
-                           f"失败：{failure.get('message', '')}\n{failure.text or ''}")[:6000]
+                           f"失败：{failure.get('message', '')}\n{failure.text or ''}")
+            description = description[:3000].encode("utf-8")[:10000].decode("utf-8", errors="ignore")
             if task is None:
                 task = request("/task/v2/tasks", token, {
                     "summary": title,

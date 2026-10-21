@@ -84,6 +84,7 @@ jobs:
         if: always()
         with:
           name: official-ai-and-feishu-evidence
+          include-hidden-files: true
           path: |
             native-evidence/
             .github/testomat/native-agent/output/reports/
