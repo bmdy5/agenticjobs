@@ -1,0 +1,60 @@
+name: Testomat personal trial
+
+on:
+  push:
+    branches: [codex/testomat-trial-20261021]
+    paths:
+      - .github/workflows/testomat-trial.yml
+      - .github/testomat/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [baseline, injected-failures]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Run existing regression or explicit failure fixtures
+        env:
+          SCENARIO: ${{ matrix.scenario }}
+        shell: bash
+        run: |
+          set +e
+          if [ "$SCENARIO" = baseline ]; then
+            node --test --test-reporter=junit test/safe-redirect.test.ts > trial-results.xml
+            result=$?
+            cat trial-results.xml
+            exit "$result"
+          fi
+          node --test --test-reporter=junit .github/testomat/injected-failures.test.cjs > trial-results.xml
+          result=$?
+          cat trial-results.xml
+          test "$result" -ne 0
+      - name: Upload report to personal Testomat project
+        if: always() && hashFiles('trial-results.xml') != ''
+        env:
+          TESTOMATIO: ${{ secrets.TESTOMATIO_PERSONAL_TRIAL }}
+          TESTOMATIO_TITLE: agenticjobs trial - ${{ matrix.scenario }} - ${{ github.run_id }}
+          TESTOMATIO_CREATE: '1'
+        run: npx --yes @testomatio/reporter@2.20.0 xml trial-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testomat-${{ matrix.scenario }}
+          path: trial-results.xml
