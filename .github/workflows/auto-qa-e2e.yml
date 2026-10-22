@@ -1,0 +1,60 @@
+name: AI QA autonomous regression
+on:
+  push:
+    branches: ['codex/auto-qa-fix-*']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  retest-and-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults:
+      run:
+        working-directory: .github/testomat/auto-qa
+    env:
+      TESTOMATIO: ${{ secrets.TESTOMATIO_PERSONAL_TRIAL }}
+      FEISHU_TESTOMAT_APP_ID: ${{ secrets.FEISHU_TESTOMAT_APP_ID }}
+      FEISHU_TESTOMAT_APP_SECRET: ${{ secrets.FEISHU_TESTOMAT_APP_SECRET }}
+      GH_TOKEN: ${{ github.token }}
+      TRIAL_BASE_URL: http://127.0.0.1:4187
+      GITHUB_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install test runner
+        run: |
+          npm ci --ignore-scripts
+          node node_modules/@playwright/test/cli.js install --with-deps chromium
+      - name: Start actual PR code
+        run: |
+          node ../login-demo/server.mjs > /tmp/auto-qa-server.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent "$TRIAL_BASE_URL" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Run official Agent authored regression
+        run: |
+          export TESTOMATIO_TITLE="Autonomous workflow retest ${GITHUB_RUN_ID}"
+          node node_modules/@playwright/test/cli.js test --config playwright.config.mjs
+      - name: Complete the same Feishu task
+        run: |
+          for attempt in $(seq 1 30); do
+            QA_PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --json url --jq '.[0].url // empty')
+            if [ -n "$QA_PR_URL" ]; then break; fi
+            sleep 2
+          done
+          test -n "$QA_PR_URL"
+          export QA_PR_URL
+          node task-sync.mjs complete evidence/result.xml job.json evidence/feishu-completed.json
+          printf '自动工作流已复测通过，飞书任务已自动完成。\n\n执行记录：%s\n\nPR 保持未合并。\n' "$GITHUB_RUN_URL" > /tmp/auto-qa-comment.md
+          gh pr comment "$QA_PR_URL" --body-file /tmp/auto-qa-comment.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: autonomous-qa-evidence
+          path: .github/testomat/auto-qa/evidence/

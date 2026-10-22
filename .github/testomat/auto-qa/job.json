@@ -1,0 +1,7 @@
+{
+  "requestUrl": "https://github.com/bmdy5/ai-qa-workflow/issues/2",
+  "issueUrl": "https://github.com/bmdy5/agenticjobs/issues/10",
+  "baseBranch": "codex/auto-qa-base-1792633232136-2",
+  "fixBranch": "codex/auto-qa-fix-1792633232136-2",
+  "taskGuid": "31c5efad-239c-4e41-97fa-6ffab59c734f"
+}
